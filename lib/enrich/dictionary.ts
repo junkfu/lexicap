@@ -35,12 +35,20 @@ export async function lookup(word: string): Promise<Lookup | null> {
   const key = word.toLowerCase().replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '');
   if (!key) return null;
 
-  const direct = data.words[key];
+  // ⚠️ 必須用 Object.hasOwn 取值。
+  //    data.words 來自 JSON.parse，帶著 Object.prototype，所以
+  //    data.words['constructor'] 會回傳函式而不是 undefined ——
+  //    字幕裡出現 constructor / toString / valueOf 這類字就會把函式
+  //    當成釋義存進去，structured clone 到 background 時直接拋錯。
+  const own = (table: Record<string, string>, k: string): string | undefined =>
+    Object.hasOwn(table, k) ? table[k] : undefined;
+
+  const direct = own(data.words, key);
   if (direct) return { meaning: direct, lemma: key };
 
   // 變化形轉導：running → run、ran → run、goals → goal
-  const base = data.forms[key];
-  const viaForm = base ? data.words[base] : undefined;
+  const base = own(data.forms, key);
+  const viaForm = base ? own(data.words, base) : undefined;
   if (base && viaForm) return { meaning: viaForm, lemma: base };
 
   return null;

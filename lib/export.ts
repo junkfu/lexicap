@@ -35,7 +35,18 @@ export function toMarkdown(captures: Capture[]): string {
   return blocks.join('\n');
 }
 
-const csvCell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`;
+/**
+ * CSV 儲存格。
+ *
+ * 除了跳脫引號，開頭是 = + - @ 時要前置單引號 —— 試算表軟體會把那些
+ * 當成公式執行。字幕對白很常以 `-` 開頭（`-Are you sure about this?`），
+ * 這不是理論風險。
+ */
+const csvCell = (v: unknown): string => {
+  const text = String(v ?? '');
+  const safe = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return `"${safe.replace(/"/g, '""')}"`;
+};
 
 export function toCsv(captures: Capture[]): string {
   // text 是原句，word 是點選的單字 —— 兩欄都給，匯進 Anki 之類的工具才有語境

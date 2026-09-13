@@ -9,8 +9,12 @@ export default defineConfig({
     name: 'Lexicap',
     description: '一本會自動長大的看片筆記本',
     // 名稱與描述不得含 Netflix / YouTube（商標與 Chrome Web Store 政策）
-    permissions: ['storage', 'unlimitedStorage', 'alarms'],
+    // 最小權限：alarms 曾經是為了 SW 定時富化而要的，富化改在清單頁做之後
+    // 就用不到了。未使用的權限只會讓安裝時的權限提示變嚇人
+    permissions: ['storage', 'unlimitedStorage'],
     action: { default_title: 'Lexicap — 打開筆記本' },
-    host_permissions: ['*://*.netflix.com/*'],
+    // 只要 https。`*://` 會連明文 HTTP 一起涵蓋，那等於允許我們的
+    // MAIN world hook 在可被中間人竄改的頁面上執行
+    host_permissions: ['https://*.netflix.com/*'],
   },
 });

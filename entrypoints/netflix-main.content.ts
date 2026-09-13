@@ -13,7 +13,7 @@ import { pickEnglishTrack, webvttUrlFor, WEBVTT_PROFILE, type NetflixTextTrack }
  * 必須 run_at: document_start，否則 hook 會裝在 manifest 請求之後。
  */
 export default defineContentScript({
-  matches: ['*://*.netflix.com/*'],
+  matches: ['https://*.netflix.com/*'],
   world: 'MAIN',
   runAt: 'document_start',
   main() {

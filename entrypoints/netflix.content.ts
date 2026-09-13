@@ -12,7 +12,7 @@ import type { SaveCaptureMessage, SaveCaptureResult } from '@/lib/messages';
  * origin，資料會在使用者清網站資料時消失。一律送訊息給 background。
  */
 export default defineContentScript({
-  matches: ['*://*.netflix.com/*'],
+  matches: ['https://*.netflix.com/*'],
   main() {
     let dialogue: Cue[] = [];
     let movieId = '';

@@ -260,7 +260,13 @@ function googleTranslateUrl(text: string): string {
  * 而且會失去當前的觀看位置。
  */
 async function jumpTo(capture: Capture) {
-  const tabs = await browser.tabs.query({ url: `*://*.netflix.com/watch/${capture.videoId}*` });
+  // videoId 來自 player.getMovieId()，應該只有數字。驗證過再拿去組
+  // match pattern —— 若混進 `*` 會把比對範圍擴大到非預期的分頁
+  if (!/^\d+$/.test(capture.videoId)) return;
+
+  const tabs = await browser.tabs.query({
+    url: `https://*.netflix.com/watch/${capture.videoId}*`,
+  });
   const tab = tabs[0];
 
   if (tab?.id) {
