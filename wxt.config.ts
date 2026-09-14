@@ -16,5 +16,8 @@ export default defineConfig({
     // 只要 https。`*://` 會連明文 HTTP 一起涵蓋，那等於允許我們的
     // MAIN world hook 在可被中間人竄改的頁面上執行
     host_permissions: ['https://*.netflix.com/*'],
+    // 句子翻譯依賴 Chrome 內建 Translator API（Chrome 138 起穩定）。不設下限的話，
+    // 舊版瀏覽器的使用者裝了會以為功能壞掉 —— 商店會直接擋下不相容的瀏覽器
+    minimum_chrome_version: '138',
   },
 });
