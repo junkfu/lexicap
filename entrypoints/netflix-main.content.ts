@@ -1,5 +1,5 @@
 import { findByKey } from '@/lib/deepScan';
-import { CUES_MESSAGE, postCues, onCommandMessage, postState } from '@/lib/bridge';
+import { CUES_MESSAGE, postCues, onCommandMessage, postEpisode, postState } from '@/lib/bridge';
 import { currentMovieId, seekTo, selectedSubtitleLanguage } from '@/lib/netflix/player';
 import { pickEnglishTrack, webvttUrlFor, WEBVTT_PROFILE, type NetflixTextTrack } from '@/lib/netflix/tracks';
 
@@ -23,9 +23,15 @@ export default defineContentScript({
 
     // ISOLATED world 拿不到 window.netflix，這些只能在這邊代辦
     let overlayWanted = false;
+    /** 已經送給 ISOLATED 的狀態。null = 還沒送過，下一輪一定送 */
+    let applied: boolean | null = null;
     onCommandMessage((command) => {
       if (command.action === 'overlayReady') {
         overlayWanted = true;   // Overlay 已成功渲染，可以開始接管
+        // 必須清掉快取後再算一次。Overlay ready 之前每一輪算出來的都是「不接管」，
+        // 使用者選的若是中文，ready 之後算出來還是「不接管」—— 值沒變就不會送，
+        // ISOLATED 端也就永遠等不到指示。清掉快取才能保證 ready 後一定送出一次
+        applied = null;
         syncSubtitles();
       } else if (command.action === 'seek') {
         seekTo(command.seconds);
@@ -33,14 +39,15 @@ export default defineContentScript({
     });
 
     /**
-     * 跟著使用者選的字幕軌走。
+     * 跟著使用者選的字幕軌走。只有使用者自己選了英文軌才接管，
+     * 選中文、選別的語言、關掉字幕、或根本讀不到字幕軌狀態時一律不接管 ——
+     * Overlay 預設就是收著的，這裡只負責在確定是英文軌時把它打開。
      *
      * ⚠️ 這裡**只讀不寫**，絕不呼叫 setTimedTextVisibility()。
      * 實測用它開關字幕後，Netflix 會把字幕位置重置，不是還原成使用者
      * 原本的位置。遮蔽改由 ISOLATED 用一條 CSS 規則做 —— 播放器的字幕
      * 狀態完全不動，就沒有東西會被重置。
      */
-    let applied: boolean | null = null;
     let loggedTrack = false;
     function syncSubtitles(): void {
       const language = selectedSubtitleLanguage();
@@ -60,7 +67,13 @@ export default defineContentScript({
       postState(takeOver);
     }
 
-    setInterval(syncSubtitles, 1000);
+    setInterval(() => {
+      syncSubtitles();
+      // 只有這裡問得到播放器現在在播哪一集。ISOLATED 靠它認出換集，
+      // 才不會把上一集的台詞掛在新一集的時間軸上
+      const movieId = currentMovieId();
+      if (movieId) postEpisode(movieId);
+    }, 1000);
 
     installStringifyHook();
     installParseHook(byMovie, () => tryEmit(byMovie, () => sentFor, (id) => (sentFor = id)));

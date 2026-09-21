@@ -1,4 +1,4 @@
-import { onCuesMessage, onStateMessage, postCommand } from '@/lib/bridge';
+import { onCuesMessage, onEpisodeMessage, onStateMessage, postCommand } from '@/lib/bridge';
 import { parseVtt, dialogueCues } from '@/lib/subtitles/vtt';
 import { createOverlay, type Overlay } from '@/lib/overlay';
 import { readTitle } from '@/lib/netflix/player';
@@ -14,16 +14,35 @@ import type { SaveCaptureMessage, SaveCaptureResult } from '@/lib/messages';
 export default defineContentScript({
   matches: ['https://*.netflix.com/*'],
   main() {
-    let dialogue: Cue[] = [];
-    let movieId = '';
     let overlay: Overlay | null = null;
     let attached: HTMLVideoElement | null = null;
-    let pending: { vtt: string; movieId: string } | null = null;
+    /**
+     * 已解析的字幕，連同它屬於哪一集。
+     *
+     * ⚠️ 收到後就一直留著，不可以用完即丟。換集時 Netflix 會換掉 <video>，
+     * Overlay 得跟著重建，而 MAIN world 每一集只送一次字幕 —— 用完即丟的話，
+     * 重建出來的 Overlay 手上是空的，整集都不會有字。
+     */
+    let loaded: { movieId: string; dialogue: Cue[] } | null = null;
+    /** MAIN world 說的、現在正在播的那一集 */
+    let movieId = '';
+    /** 目前掛在 Overlay 上的那份。用陣列本體比對，避免重複 setCues */
+    let dialogue: Cue[] = NO_CUES;
 
     // 這些監聽必須最先註冊。postMessage 不會緩衝，MAIN world 可能在
     // 播放器出現之前就把字幕送過來了，那樣訊息會直接消失
     onCuesMessage((message) => {
-      pending = { vtt: message.vtt, movieId: message.movieId };
+      const cues = dialogueCues(parseVtt(message.vtt));
+      loaded = { movieId: message.movieId, dialogue: cues };
+      console.log(`[lexicap] movieId=${message.movieId}，${cues.length} 句有台詞`);
+      applyCues();
+    });
+
+    // 換集。兩則訊息沒有先後保證 —— 新字幕可能比這則早到，也可能晚到，
+    // 所以兩邊都呼叫 applyCues()，由它比對 movieId 決定該顯示哪一份
+    onEpisodeMessage((id) => {
+      if (id === movieId) return;
+      movieId = id;
       applyCues();
     });
 
@@ -56,13 +75,16 @@ export default defineContentScript({
         document.querySelector<HTMLVideoElement>('.watch-video video') ??
         document.querySelector<HTMLVideoElement>('[data-uia="player"] video');
 
-      if (!video || video === attached) return;
+      // 播放器被拆掉了（回瀏覽頁、或換集重建到一半）。脫離 DOM 的 <video>
+      // currentTime 會凍在原地 —— Overlay 留著只會讓最後一句卡在畫面上不動
+      if (!video) {
+        if (attached) detach();
+        return;
+      }
+      if (video === attached) return;
 
-      overlay?.destroy();
+      detach();
       attached = video;
-      // 換集了，舊字幕不能留著 —— MAIN world 會在認出新的 movieId 後重送
-      dialogue = [];
-      movieId = '';
 
       overlay = createOverlay(video, {
         onWordClick: (word, cue) => void capture(cue, word, 'word'),
@@ -75,6 +97,18 @@ export default defineContentScript({
       console.log('[lexicap] 已接上播放器');
     }
 
+    /** 拆掉 Overlay，把畫面完整還給 Netflix */
+    function detach(): void {
+      overlay?.destroy();
+      overlay = null;
+      attached = null;
+      // 新的 Overlay 身上還沒有任何字幕，清掉記號讓 applyCues 一定重灌一次。
+      // movieId 不清 —— 那是 MAIN world 的權威狀態，清掉只會讓手上的字幕對不上
+      dialogue = NO_CUES;
+      // 遮罩若留著，會有一段原生字幕被遮、我們又還沒獲准顯示的空窗
+      document.documentElement.classList.remove('lexicap-active');
+    }
+
     // 只註冊一次。放進 ensureAttached 的話，每換一集就多一組監聽，
     // 按一次 S 會存好幾筆
     installHotkeys(
@@ -85,13 +119,13 @@ export default defineContentScript({
     setInterval(ensureAttached, 1000);
     ensureAttached();
 
+    /** 把手上的字幕掛上 Overlay —— 但只在它確實屬於正在播的這一集時 */
     function applyCues(): void {
-      if (!overlay || !pending) return;
-      dialogue = dialogueCues(parseVtt(pending.vtt));
-      movieId = pending.movieId;
-      pending = null;
-      overlay.setCues(dialogue);
-      console.log(`[lexicap] movieId=${movieId}，${dialogue.length} 句有台詞`);
+      if (!overlay) return;
+      const next = loaded && loaded.movieId === movieId ? loaded.dialogue : NO_CUES;
+      if (next === dialogue) return;
+      dialogue = next;
+      overlay.setCues(next);
     }
 
     async function capture(cue: Cue, word: string | null, captureType: Capture['captureType']) {
@@ -121,6 +155,9 @@ export default defineContentScript({
     }
   },
 });
+
+/** 「沒有字幕」的共用空陣列。applyCues 用陣列本體比對，所以必須是同一顆 */
+const NO_CUES: Cue[] = [];
 
 /** 片名只在控制列顯示時才掛上 DOM，取不到就沿用上次成功的 */
 let cachedTitle = '';

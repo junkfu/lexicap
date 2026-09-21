@@ -6,9 +6,9 @@ export interface OverlayOptions {
   /** 點單字。連同整句一起交出去 —— 句子才是真正的儲存單位 */
   onWordClick(word: string, cue: Cue): void;
   /**
-   * 第一次真的把一句畫到畫面上時呼叫。
+   * 第一次真的把一句畫到畫面上時呼叫（當下是收著的也照畫、照呼叫）。
    *
-   * 存在的理由：隱藏原生字幕必須等到確定 Overlay 會顯示之後。
+   * 存在的理由：接管字幕必須等到確定 Overlay 畫得出東西之後。
    * 否則 Overlay 一有問題，使用者就完全沒有字幕可看 —— 實際發生過。
    */
   onFirstRender?(): void;
@@ -21,7 +21,7 @@ export interface Overlay {
   /** 上一句有台詞的（`A` 鍵用） */
   previous(): Cue | null;
   toast(message: string): void;
-  /** 使用者切到別的字幕語言或關掉字幕時收起來，把畫面還給 Netflix */
+  /** 只有 MAIN world 確認使用者選了英文軌才會打開；切走或關掉字幕時收回去 */
   setVisible(visible: boolean): void;
   isVisible(): boolean;
   destroy(): void;
@@ -32,6 +32,9 @@ export function createOverlay(video: HTMLVideoElement, options: OverlayOptions):
 
   const root = document.createElement('div');
   root.id = ROOT_ID;
+  // 預設收著。要等 MAIN world 確認使用者選的是英文軌才打開 ——
+  // 反過來（先顯示、發現不是英文再收）會讓選中文的使用者看到一閃而過的英文字幕
+  root.className = 'lexicap-hidden';
   root.innerHTML = '<div class="lexicap-line"></div>';
 
   const lineEl = root.querySelector<HTMLElement>('.lexicap-line')!;

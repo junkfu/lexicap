@@ -59,6 +59,38 @@ export function onCommandMessage(cb: (command: Command) => void): () => void {
   return () => window.removeEventListener('message', handler);
 }
 
+/**
+ * MAIN → ISOLATED：現在正在播的是哪一集。
+ *
+ * 只有 MAIN world 問得到播放器，ISOLATED 無從自己判斷換集。它手上那份字幕
+ * 屬於哪一集，得靠這個比對 —— 上一集的台詞蓋在新一集上比沒有字幕更糟。
+ *
+ * ⚠️ 每一輪都送，不是只在變動時送。兩個 world 的啟動時機不同
+ * （MAIN 是 document_start、ISOLATED 是 document_idle），postMessage 又不緩衝：
+ * 只送一次的話，ISOLATED 還沒掛上監聽的那一則就永遠補不回來了。
+ */
+export const EPISODE_MESSAGE = 'lexicap:episode';
+
+export interface EpisodeMessage {
+  type: typeof EPISODE_MESSAGE;
+  movieId: string;
+}
+
+export function postEpisode(movieId: string): void {
+  window.postMessage({ type: EPISODE_MESSAGE, movieId } satisfies EpisodeMessage, '*');
+}
+
+export function onEpisodeMessage(cb: (movieId: string) => void): () => void {
+  const handler = (event: MessageEvent) => {
+    if (event.source !== window) return;
+    const data = event.data as EpisodeMessage | undefined;
+    if (data?.type !== EPISODE_MESSAGE) return;
+    cb(data.movieId);
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
 /** MAIN → ISOLATED：Overlay 該不該顯示（依使用者當下選的字幕軌決定） */
 export const STATE_MESSAGE = 'lexicap:state';
 

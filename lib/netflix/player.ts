@@ -73,18 +73,32 @@ export function getCurrentTime(): number {
  * 使用者當下選的字幕語言。
  *
  * 物件形狀未經探勘確認，所以廣撒網取常見欄位名；取不到時回 null，
- * 呼叫端據此保守處理（不動 Netflix 的字幕）。
+ * 呼叫端據此保守處理（不接管，讓 Netflix 自己的字幕照常顯示）。
  */
 export function selectedSubtitleLanguage(): string | null {
-  const track = getPlayer()?.getTimedTextTrack() as Record<string, unknown> | null | undefined;
+  let track: unknown;
+  try {
+    track = getPlayer()?.getTimedTextTrack();
+  } catch {
+    return null;
+  }
   if (!track || typeof track !== 'object') return null;
+  const fields = track as Record<string, unknown>;
 
   // isNoneTrack = 使用者把字幕關掉了
-  if (track['isNoneTrack'] === true) return 'off';
+  if (fields['isNoneTrack'] === true) return 'off';
 
-  for (const key of ['bcp47', 'language', 'languageCode', 'locale', 'id']) {
-    const value = track[key];
+  for (const key of ['bcp47', 'language', 'languageCode', 'locale']) {
+    const value = fields[key];
     if (typeof value === 'string' && value) return value;
+  }
+
+  // id 不是語言碼，是 `T:2:1;2;en;1;1;` 這種複合字串 —— 整串拿去比對開頭
+  // 永遠不會等於 en。撈出其中的語言碼片段，撈不到就當作讀不到
+  const id = fields['id'];
+  if (typeof id === 'string') {
+    const hit = id.split(/[;:,]/).find((part) => /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(part));
+    if (hit) return hit;
   }
   return null;
 }
