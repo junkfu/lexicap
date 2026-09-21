@@ -91,6 +91,10 @@ export function createOverlay(video: HTMLVideoElement, options: OverlayOptions):
     setCues(cues) {
       dialogue = cues;
       shownIndex = -1;
+      // 一定要自己重畫一次。tick 靠 `index !== shownIndex` 決定要不要重畫，
+      // 而空清單（以及「還沒播到新一集第一句」）算出來的 index 同樣是 -1 ——
+      // 只換 dialogue 不重畫的話，上一集那一句會留在畫面上不動
+      render();
     },
     current: () => dialogue[shownIndex] ?? null,
     previous: () => (shownIndex > 0 ? dialogue[shownIndex - 1] ?? null : null),

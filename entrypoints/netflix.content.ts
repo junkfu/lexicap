@@ -28,6 +28,8 @@ export default defineContentScript({
     let movieId = '';
     /** 目前掛在 Overlay 上的那份。用陣列本體比對，避免重複 setCues */
     let dialogue: Cue[] = NO_CUES;
+    /** MAIN world 最後一次說的「該不該接管」。真的要不要接管還得看手上有沒有字幕 */
+    let wanted = false;
 
     // 這些監聽必須最先註冊。postMessage 不會緩衝，MAIN world 可能在
     // 播放器出現之前就把字幕送過來了，那樣訊息會直接消失
@@ -49,11 +51,23 @@ export default defineContentScript({
     // 使用者切到中文字幕或把字幕關掉時，MAIN world 會通知我們收起來。
     // 擴充在那之後完全休眠 —— 不該改變使用者原本的觀看體驗
     onStateMessage((visible) => {
-      overlay?.setVisible(visible);
+      wanted = visible;
+      applyVisibility();
+    });
+
+    /**
+     * 手上沒有這一集的字幕時絕不接管。
+     *
+     * 換集到新字幕送達之間就是這種狀態 —— 光看 MAIN 的指示就遮掉原生字幕的話，
+     * 原生的被遮、我們又拿不出東西，使用者整段完全沒有字可看。
+     */
+    function applyVisibility(): void {
+      const on = wanted && dialogue.length > 0;
+      overlay?.setVisible(on);
       // 遮蔽原生字幕靠這個 class + stylesheet 規則，不去動播放器狀態。
       // 移除 class 之後，Netflix 的字幕會回到它原本的位置
-      document.documentElement.classList.toggle('lexicap-active', visible);
-    });
+      document.documentElement.classList.toggle('lexicap-active', on);
+    }
 
     // 清單頁按 ▶ 回跳。寫 video.currentTime 會被播放器覆寫，
     // 所以轉給 MAIN world 用 player.seek()
@@ -126,6 +140,7 @@ export default defineContentScript({
       if (next === dialogue) return;
       dialogue = next;
       overlay.setCues(next);
+      applyVisibility();
     }
 
     async function capture(cue: Cue, word: string | null, captureType: Capture['captureType']) {
